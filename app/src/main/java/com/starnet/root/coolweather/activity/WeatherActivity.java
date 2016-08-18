@@ -21,6 +21,7 @@ import com.starnet.root.coolweather.R;
 import com.starnet.root.coolweather.model.CommonObjectResponse;
 import com.starnet.root.coolweather.model.Weather;
 import com.starnet.root.coolweather.net.ApiManager;
+import com.starnet.root.coolweather.service.AutoUpdateService;
 import com.starnet.root.coolweather.util.HttpCallbackListener;
 import com.starnet.root.coolweather.util.HttpUtil;
 import com.starnet.root.coolweather.util.Utility;
@@ -56,8 +57,8 @@ public class WeatherActivity extends AppCompatActivity implements View.OnClickLi
         temp1Text = (TextView) findViewById(R.id.temp1);
         temp2Text = (TextView) findViewById(R.id.temp2);
         currentDateText = (TextView) findViewById(R.id.current_date);
-        //switchCity = (Button) findViewById(R.id.switch_city);
-        //refreshWeather = (Button) findViewById(R.id.refresh_weather);
+        switchCity = (Button) findViewById(R.id.switch_city);
+        refreshWeather = (Button) findViewById(R.id.refresh_weather);
 
         String countryCode = getIntent().getStringExtra("country_code");
         if (!TextUtils.isEmpty(countryCode)) {
@@ -69,13 +70,13 @@ public class WeatherActivity extends AppCompatActivity implements View.OnClickLi
             showWeather();
         }
 
-        //switchCity.setOnClickListener(this);
-        //refreshWeather.setOnClickListener(this);
+        switchCity.setOnClickListener(this);
+        refreshWeather.setOnClickListener(this);
     }
 
     @Override
     public void onClick(View view) {
-        /*switch (view.getId()) {
+        switch (view.getId()) {
             case R.id.switch_city:
                 Intent intent = new Intent(this, ChooseAreaActivity.class);
                 intent.putExtra("from_weather_activity", true);
@@ -91,7 +92,7 @@ public class WeatherActivity extends AppCompatActivity implements View.OnClickLi
                 }
                 break;
             default:break;
-        }*/
+        }
     }
 
     private void queryWeatherCode(String countryCode) {
@@ -110,7 +111,7 @@ public class WeatherActivity extends AppCompatActivity implements View.OnClickLi
                 @Override
                 public void onResponse(Call<CommonObjectResponse<Weather>> call, Response<CommonObjectResponse<Weather>> response) {
                     Log.i("TAG", JSON.toJSONString(response.body()));
-                    Utility.handleWeatherResponse(WeatherActivity.this, JSON.toJSONString(response.body()));
+                    Utility.handleWeatherResponse(WeatherActivity.this, JSON.toJSONString(response.body()), address);
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
@@ -213,5 +214,7 @@ public class WeatherActivity extends AppCompatActivity implements View.OnClickLi
         currentDateText.setText(preferences.getString("current_date",""));
         weatherInfoLayout.setVisibility(View.VISIBLE);
         cityNameText.setVisibility(View.VISIBLE);
+        Intent intent = new Intent(this, AutoUpdateService.class);
+        startService(intent);
     }
 }
