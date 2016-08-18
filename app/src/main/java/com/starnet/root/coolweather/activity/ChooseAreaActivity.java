@@ -1,0 +1,210 @@
+package com.starnet.root.coolweather.activity;
+
+import android.app.ProgressDialog;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.preference.PreferenceManager;
+import android.support.v7.app.AppCompatActivity;
+import android.os.Bundle;
+import android.text.TextUtils;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import com.facebook.stetho.Stetho;
+import com.starnet.root.coolweather.R;
+import com.starnet.root.coolweather.model.City;
+import com.starnet.root.coolweather.model.Country;
+import com.starnet.root.coolweather.model.Province;
+import com.starnet.root.coolweather.util.CoolWeatherDB;
+import com.starnet.root.coolweather.util.HttpCallbackListener;
+import com.starnet.root.coolweather.util.HttpUtil;
+import com.starnet.root.coolweather.util.Utility;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ChooseAreaActivity extends AppCompatActivity {
+
+    public static final int LEVEL_PROVINCE = 0;
+    public static final int LEVEL_CITY = 1;
+    public static final int LEVEL_COUNTRY = 2;
+
+    private ProgressDialog mProgressDialog;
+    private TextView titleText;
+    private ListView mListView;
+    private ArrayAdapter<String> mAdapter;
+    private CoolWeatherDB mCoolWeatherDB;
+    private List<String> dataList = new ArrayList<String>();
+    private List<Province> mProvinceList;
+    private List<City> mCityList;
+    private List<Country> mCountryList;
+    private Province selectedProvince;
+    private City selectedCity;
+    private int currentLevel;
+
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        //Stetho.initializeWithDefaults(this);
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        if (preferences.getBoolean("city_selected", false)) {
+            Intent intent = new Intent(this,WeatherActivity.class);
+            startActivity(intent);
+            finish();
+            return;
+        }
+        setContentView(R.layout.choose_area);
+        mListView = (ListView) findViewById(R.id.list_view);
+        titleText = (TextView) findViewById(R.id.title_text);
+        mAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, dataList);
+        mListView.setAdapter(mAdapter);
+        mCoolWeatherDB = CoolWeatherDB.getInstance(this);
+        mListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
+                if (currentLevel == LEVEL_PROVINCE) {
+                    selectedProvince = mProvinceList.get(i);
+                    queryCities();
+                } else if (currentLevel == LEVEL_CITY) {
+                    selectedCity = mCityList.get(i);
+                    queryCountry();
+                } else if (currentLevel == LEVEL_COUNTRY) {
+                    String countryCode = mCountryList.get(i).getCountryCode();
+                    Intent intent = new Intent(ChooseAreaActivity.this,WeatherActivity.class);
+                    intent.putExtra("country_code", countryCode);
+                    startActivity(intent);
+                    finish();
+                }
+            }
+        });
+        queryProvinces();
+    }
+
+    private void queryProvinces() {
+        mProvinceList = mCoolWeatherDB.loadProvinces();
+        if (mProvinceList.size() > 0) {
+            dataList.clear();
+            for (Province province:mProvinceList) {
+                dataList.add(province.getProvinceName());
+            }
+            mAdapter.notifyDataSetChanged();
+            mListView.setSelection(0);
+            titleText.setText("中国");
+            currentLevel = LEVEL_PROVINCE;
+        } else {
+            queryFromServer(null, "province");
+        }
+    }
+
+    private void queryCities() {
+        mCityList = mCoolWeatherDB.loadCities(selectedProvince.getId());
+        if (mCityList.size() > 0) {
+            dataList.clear();
+            for (City city:mCityList) {
+                dataList.add(city.getCityName());
+            }
+            mAdapter.notifyDataSetChanged();
+            mListView.setSelection(0);
+            titleText.setText(selectedProvince.getProvinceName());
+            currentLevel = LEVEL_CITY;
+        } else {
+            queryFromServer(selectedProvince.getProvinceCode(), "city");
+        }
+    }
+
+    private void queryCountry() {
+        mCountryList = mCoolWeatherDB.loadCountries(selectedCity.getId());
+        if (mCountryList.size() > 0) {
+            dataList.clear();
+            for (Country country:mCountryList) {
+                dataList.add(country.getCountryName());
+            }
+            mAdapter.notifyDataSetChanged();
+            mListView.setSelection(0);
+            titleText.setText(selectedCity.getCityName());
+            currentLevel = LEVEL_COUNTRY;
+        } else {
+            queryFromServer(selectedCity.getCityCode(), "country");
+        }
+    }
+
+    private void queryFromServer(final String code, final String type) {
+        String address;
+        if (!TextUtils.isEmpty(code)) {
+            address = "http://www.weather.com.cn/data/list3/city"+code+".xml";
+        } else {
+            address = "http://www.weather.com.cn/data/list3/city.xml";
+        }
+        showProgressDialog();
+        HttpUtil.sendHttpRequest(address, new HttpCallbackListener() {
+            @Override
+            public void onFinish(String response) {
+                boolean result = false;
+                if ("province".equals(type)) {
+                    result = Utility.handleProvincesResponse(mCoolWeatherDB, response);
+                } else if ("city".equals(type)) {
+                    result = Utility.handleCitiesResponse(mCoolWeatherDB, response, selectedProvince.getId());
+                } else if ("country".equals(type)) {
+                    result = Utility.handleCountriesResponse(mCoolWeatherDB, response, selectedCity.getId());
+                }
+                if (result) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            closeProgressDialog();
+                            if ("province".equals(type)) {
+                                queryProvinces();
+                            } else if ("city".equals(type)) {
+                                queryCities();
+                            } else if ("country".equals(type)) {
+                                queryCountry();
+                            }
+                        }
+                    });
+                }
+            }
+
+            @Override
+            public void onError(Exception e) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        closeProgressDialog();
+                        Toast.makeText(ChooseAreaActivity.this, "加载失败", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        });
+    }
+
+    private void showProgressDialog() {
+        if (mProgressDialog == null) {
+            mProgressDialog = new ProgressDialog(this);
+            mProgressDialog.setMessage("正在加载...");
+            mProgressDialog.setCanceledOnTouchOutside(false);
+        }
+        mProgressDialog.show();
+    }
+
+    private void closeProgressDialog() {
+        if (mProgressDialog != null) {
+            mProgressDialog.dismiss();
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (currentLevel == LEVEL_COUNTRY) {
+            queryCities();
+        } else if (currentLevel == LEVEL_CITY) {
+            queryProvinces();
+        } else {
+            finish();
+        }
+    }
+}
